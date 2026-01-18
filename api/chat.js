@@ -1,12 +1,16 @@
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    res.statusCode = 405;
+    res.setHeader("Content-Type", "application/json");
+    return res.end(JSON.stringify({ error: "Method not allowed" }));
   }
 
   try {
     const { messages } = req.body || {};
     if (!Array.isArray(messages)) {
-      return res.status(400).json({ error: "Invalid payload" });
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      return res.end(JSON.stringify({ error: "Invalid payload" }));
     }
 
     const systemPrompt = `
@@ -32,15 +36,17 @@ If the user shares contact info, confirm help is on the way.
     const data = await r.json();
 
     if (!r.ok) {
-      return res.status(500).json({
+      res.statusCode = 500;
+      res.setHeader("Content-Type", "application/json");
+      return res.end(JSON.stringify({
         error: "OpenAI error",
         details: data?.error?.message || "Unknown"
-      });
+      }));
     }
 
     const reply = data?.choices?.[0]?.message?.content || "Sorry—can you try again?";
 
-    const allText = messages.map(m => m?.content || "").join(" ");
+    const allText = messages.map(m => (m && m.content ? String(m.content) : "")).join(" ");
     const lead = {
       issue: allText,
       name: (allText.match(/name is ([a-zA-Z ]+)/i)?.[1] || "").trim(),
@@ -57,8 +63,13 @@ If the user shares contact info, confirm help is on the way.
       });
     }
 
-    return res.status(200).json({ reply });
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json");
+    return res.end(JSON.stringify({ reply }));
+
   } catch (e) {
-    return res.status(500).json({ error: "Server error", details: String(e?.message || e) });
+    res.statusCode = 500;
+    res.setHeader("Content-Type", "application/json");
+    return res.end(JSON.stringify({ error: "Server error", details: String(e?.message || e) }));
   }
-}
+};
