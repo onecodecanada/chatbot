@@ -1,16 +1,17 @@
 module.exports = async (req, res) => {
+  // CORS (must be first)
+  res.setHeader("Access-Control-Allow-Origin", "https://romaheating.ca");
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  // Preflight
+  if (req.method === "OPTIONS") {
+    res.statusCode = 204;
+    return res.end();
+  }
+
   try {
-    // CORS headers (allow your WP site to call this API)
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-    // Handle preflight request
-    if (req.method === "OPTIONS") {
-      res.statusCode = 204;
-      return res.end();
-    }
-
     // Browser test
     if (req.method === "GET") {
       res.statusCode = 200;
@@ -24,15 +25,13 @@ module.exports = async (req, res) => {
       return res.end(JSON.stringify({ error: "Method not allowed" }));
     }
 
-    // Safe JSON body parsing
     let body = req.body;
     if (typeof body === "string") {
-      try { body = JSON.parse(body); } catch (e) { body = {}; }
+      try { body = JSON.parse(body); } catch { body = {}; }
     }
     body = body || {};
 
     const messages = Array.isArray(body.messages) ? body.messages : null;
-
     if (!messages) {
       res.statusCode = 400;
       res.setHeader("Content-Type", "application/json");
