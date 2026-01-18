@@ -1,26 +1,23 @@
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   if (req.method !== "POST") {
-    res.statusCode = 405;
-    res.setHeader("Content-Type", "application/json");
-    return res.end(JSON.stringify({ error: "Method not allowed" }));
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
     const { messages } = req.body || {};
     if (!Array.isArray(messages)) {
-      res.statusCode = 400;
-      return res.end(JSON.stringify({ error: "Invalid payload" }));
+      return res.status(400).json({ error: "Invalid payload" });
     }
 
     const systemPrompt = `
 You are a friendly assistant for ROMA Heating & Cooling in Greater Vancouver.
 Keep replies short and natural.
-Help users explain their heating, boiler, or heat pump issue.
+Help users explain their heating/boiler/heat pump issue.
 Gently ask for name, phone, email, and city without being pushy.
 If the user shares contact info, confirm help is on the way.
 `;
 
-    const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -32,17 +29,24 @@ If the user shares contact info, confirm help is on the way.
       })
     });
 
-    const aiData = await openaiResponse.json();
-    const reply = aiData?.choices?.[0]?.message?.content || "Sorry—something went wrong. Can you try again?";
+    const data = await r.json();
 
-    const allText = messages.map(m => (m && m.content ? String(m.content) : "")).join(" ");
+    if (!r.ok) {
+      return res.status(500).json({
+        error: "OpenAI error",
+        details: data?.error?.message || "Unknown"
+      });
+    }
 
+    const reply = data?.choices?.[0]?.message?.content || "Sorry—can you try again?";
+
+    const allText = messages.map(m => m?.content || "").join(" ");
     const lead = {
       issue: allText,
-      name: allText.match(/name is ([a-zA-Z ]+)/i)?.[1]?.trim() || "",
-      phone: allText.match(/(\+?\d[\d\s\-]{7,})/)?.[1]?.trim() || "",
-      email: allText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.trim() || "",
-      city: allText.match(/in ([a-zA-Z ]+)/i)?.[1]?.trim() || ""
+      name: (allText.match(/name is ([a-zA-Z ]+)/i)?.[1] || "").trim(),
+      phone: (allText.match(/(\+?\d[\d\s\-]{7,})/)?.[1] || "").trim(),
+      email: (allText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "").trim(),
+      city: (allText.match(/in ([a-zA-Z ]+)/i)?.[1] || "").trim()
     };
 
     if (lead.phone || lead.email) {
@@ -53,12 +57,8 @@ If the user shares contact info, confirm help is on the way.
       });
     }
 
-    res.statusCode = 200;
-    res.setHeader("Content-Type", "application/json");
-    return res.end(JSON.stringify({ reply }));
+    return res.status(200).json({ reply });
   } catch (e) {
-    res.statusCode = 500;
-    res.setHeader("Content-Type", "application/json");
-    return res.end(JSON.stringify({ error: "Server error" }));
+    return res.status(500).json({ error: "Server error", details: String(e?.message || e) });
   }
-};
+}
