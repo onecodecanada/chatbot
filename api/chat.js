@@ -1,6 +1,17 @@
 module.exports = async (req, res) => {
   try {
-    // Always respond to GET with 200 so browser test never crashes
+    // CORS headers (allow your WP site to call this API)
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+    // Handle preflight request
+    if (req.method === "OPTIONS") {
+      res.statusCode = 204;
+      return res.end();
+    }
+
+    // Browser test
     if (req.method === "GET") {
       res.statusCode = 200;
       res.setHeader("Content-Type", "application/json");
@@ -13,8 +24,13 @@ module.exports = async (req, res) => {
       return res.end(JSON.stringify({ error: "Method not allowed" }));
     }
 
-    // Ensure body exists
-    const body = req.body || {};
+    // Safe JSON body parsing
+    let body = req.body;
+    if (typeof body === "string") {
+      try { body = JSON.parse(body); } catch (e) { body = {}; }
+    }
+    body = body || {};
+
     const messages = Array.isArray(body.messages) ? body.messages : null;
 
     if (!messages) {
