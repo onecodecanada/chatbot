@@ -1,25 +1,39 @@
 module.exports = async (req, res) => {
-  if (req.method !== "POST") {
-    res.statusCode = 405;
-    res.setHeader("Content-Type", "application/json");
-    return res.end(JSON.stringify({ error: "Method not allowed" }));
-  }
-
   try {
-    const { messages } = req.body || {};
-    if (!Array.isArray(messages)) {
-      res.statusCode = 400;
+    // Always respond to GET with 200 so browser test never crashes
+    if (req.method === "GET") {
+      res.statusCode = 200;
       res.setHeader("Content-Type", "application/json");
-      return res.end(JSON.stringify({ error: "Invalid payload" }));
+      return res.end(JSON.stringify({ ok: true, message: "Use POST /api/chat" }));
     }
 
-    const systemPrompt = `
-You are a friendly assistant for ROMA Heating & Cooling in Greater Vancouver.
-Keep replies short and natural.
-Help users explain their heating/boiler/heat pump issue.
-Gently ask for name, phone, email, and city without being pushy.
-If the user shares contact info, confirm help is on the way.
-`;
+    if (req.method !== "POST") {
+      res.statusCode = 405;
+      res.setHeader("Content-Type", "application/json");
+      return res.end(JSON.stringify({ error: "Method not allowed" }));
+    }
+
+    // Ensure body exists
+    const body = req.body || {};
+    const messages = Array.isArray(body.messages) ? body.messages : null;
+
+    if (!messages) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      return res.end(JSON.stringify({ error: "Invalid payload: messages must be an array" }));
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+      res.statusCode = 500;
+      res.setHeader("Content-Type", "application/json");
+      return res.end(JSON.stringify({ error: "Missing OPENAI_API_KEY in Vercel env vars" }));
+    }
+
+    const systemPrompt =
+      "You are a friendly assistant for ROMA Heating & Cooling in Greater Vancouver. " +
+      "Keep replies short and natural. Help users explain their heating/boiler/heat pump issue. " +
+      "Gently ask for name, phone, email, and city without being pushy. " +
+      "If the user shares contact info, confirm help is on the way.";
 
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -70,6 +84,6 @@ If the user shares contact info, confirm help is on the way.
   } catch (e) {
     res.statusCode = 500;
     res.setHeader("Content-Type", "application/json");
-    return res.end(JSON.stringify({ error: "Server error", details: String(e?.message || e) }));
+    return res.end(JSON.stringify({ error: "Server crash", details: String(e?.message || e) }));
   }
 };
