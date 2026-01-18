@@ -1,18 +1,26 @@
 module.exports = async (req, res) => {
-  // CORS (must be first)
-  res.setHeader("Access-Control-Allow-Origin", "https://romaheating.ca");
+  // ---------- CORS (must be first) ----------
+  const allowed = new Set([
+    "https://romaheating.ca",
+    "https://www.romaheating.ca"
+  ]);
+
+  const origin = req.headers.origin;
+  if (allowed.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
   res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  // Preflight
+  // Preflight request
   if (req.method === "OPTIONS") {
     res.statusCode = 204;
     return res.end();
   }
 
   try {
-    // Browser test
+    // Health check (browser)
     if (req.method === "GET") {
       res.statusCode = 200;
       res.setHeader("Content-Type", "application/json");
@@ -25,6 +33,7 @@ module.exports = async (req, res) => {
       return res.end(JSON.stringify({ error: "Method not allowed" }));
     }
 
+    // Safe JSON body parsing
     let body = req.body;
     if (typeof body === "string") {
       try { body = JSON.parse(body); } catch { body = {}; }
@@ -75,6 +84,7 @@ module.exports = async (req, res) => {
 
     const reply = data?.choices?.[0]?.message?.content || "Sorry—can you try again?";
 
+    // Lead extraction (lightweight)
     const allText = messages.map(m => (m && m.content ? String(m.content) : "")).join(" ");
     const lead = {
       issue: allText,
@@ -84,6 +94,7 @@ module.exports = async (req, res) => {
       city: (allText.match(/in ([a-zA-Z ]+)/i)?.[1] || "").trim()
     };
 
+    // Send to Zapier when at least phone or email exists
     if (lead.phone || lead.email) {
       await fetch("https://hooks.zapier.com/hooks/catch/14133549/ug7yfjo/", {
         method: "POST",
@@ -99,6 +110,9 @@ module.exports = async (req, res) => {
   } catch (e) {
     res.statusCode = 500;
     res.setHeader("Content-Type", "application/json");
-    return res.end(JSON.stringify({ error: "Server crash", details: String(e?.message || e) }));
+    return res.end(JSON.stringify({
+      error: "Server crash",
+      details: String(e?.message || e)
+    }));
   }
 };
