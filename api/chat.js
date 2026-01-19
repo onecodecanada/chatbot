@@ -1,39 +1,44 @@
 module.exports = async (req, res) => {
-  // ---------- CORS (must be first) ----------
-  const allowed = new Set([
-    "https://romaheating.ca",
-    "https://www.romaheating.ca"
-  ]);
+  /* =========================
+     CORS — MUST BE FIRST
+     ========================= */
+  const origin = req.headers.origin || "*";
 
-  const origin = req.headers.origin;
-  if (allowed.has(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  }
-  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Max-Age", "86400");
+  res.setHeader("Vary", "Origin");
 
-  // Preflight request
+  // Handle preflight
   if (req.method === "OPTIONS") {
     res.statusCode = 204;
     return res.end();
   }
 
   try {
-    // Health check (browser)
+    /* =========================
+       GET — Health Check
+       ========================= */
     if (req.method === "GET") {
       res.statusCode = 200;
       res.setHeader("Content-Type", "application/json");
-      return res.end(JSON.stringify({ ok: true, message: "Use POST /api/chat" }));
+      return res.end(JSON.stringify({
+        ok: true,
+        message: "Use POST /api/chat"
+      }));
     }
 
+    /* =========================
+       POST — Chat Handling
+       ========================= */
     if (req.method !== "POST") {
       res.statusCode = 405;
       res.setHeader("Content-Type", "application/json");
       return res.end(JSON.stringify({ error: "Method not allowed" }));
     }
 
-    // Safe JSON body parsing
+    // Parse body safely
     let body = req.body;
     if (typeof body === "string") {
       try { body = JSON.parse(body); } catch { body = {}; }
@@ -44,48 +49,66 @@ module.exports = async (req, res) => {
     if (!messages) {
       res.statusCode = 400;
       res.setHeader("Content-Type", "application/json");
-      return res.end(JSON.stringify({ error: "Invalid payload: messages must be an array" }));
+      return res.end(JSON.stringify({
+        error: "Invalid payload: messages must be an array"
+      }));
     }
 
     if (!process.env.OPENAI_API_KEY) {
       res.statusCode = 500;
       res.setHeader("Content-Type", "application/json");
-      return res.end(JSON.stringify({ error: "Missing OPENAI_API_KEY in Vercel env vars" }));
+      return res.end(JSON.stringify({
+        error: "Missing OPENAI_API_KEY in Vercel environment variables"
+      }));
     }
 
+    /* =========================
+       OpenAI Request
+       ========================= */
     const systemPrompt =
       "You are a friendly assistant for ROMA Heating & Cooling in Greater Vancouver. " +
-      "Keep replies short and natural. Help users explain their heating/boiler/heat pump issue. " +
+      "Keep replies short and natural. Help users explain their heating, boiler, or heat pump issue. " +
       "Gently ask for name, phone, email, and city without being pushy. " +
       "If the user shares contact info, confirm help is on the way.";
 
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [{ role: "system", content: systemPrompt }, ...messages]
-      })
-    });
+    const openaiResponse = await fetch(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...messages
+          ]
+        })
+      }
+    );
 
-    const data = await r.json();
+    const openaiData = await openaiResponse.json();
 
-    if (!r.ok) {
+    if (!openaiResponse.ok) {
       res.statusCode = 500;
       res.setHeader("Content-Type", "application/json");
       return res.end(JSON.stringify({
         error: "OpenAI error",
-        details: data?.error?.message || "Unknown"
+        details: openaiData?.error?.message || "Unknown OpenAI error"
       }));
     }
 
-    const reply = data?.choices?.[0]?.message?.content || "Sorry—can you try again?";
+    const reply =
+      openaiData?.choices?.[0]?.message?.content ||
+      "Sorry, can you rephrase that?";
 
-    // Lead extraction (lightweight)
-    const allText = messages.map(m => (m && m.content ? String(m.content) : "")).join(" ");
+    /* =========================
+       Lead Extraction (Soft)
+       ========================= */
+    const allText = messages.map(m => m?.content || "").join(" ");
+
     const lead = {
       issue: allText,
       name: (allText.match(/name is ([a-zA-Z ]+)/i)?.[1] || "").trim(),
@@ -94,25 +117,33 @@ module.exports = async (req, res) => {
       city: (allText.match(/in ([a-zA-Z ]+)/i)?.[1] || "").trim()
     };
 
-    // Send to Zapier when at least phone or email exists
+    /* =========================
+       Send Lead to Zapier
+       ========================= */
     if (lead.phone || lead.email) {
-      await fetch("https://hooks.zapier.com/hooks/catch/14133549/ug7yfjo/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(lead)
-      });
+      await fetch(
+        "https://hooks.zapier.com/hooks/catch/14133549/ug7yfjo/",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(lead)
+        }
+      );
     }
 
+    /* =========================
+       Return Reply
+       ========================= */
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json");
     return res.end(JSON.stringify({ reply }));
 
-  } catch (e) {
+  } catch (err) {
     res.statusCode = 500;
     res.setHeader("Content-Type", "application/json");
     return res.end(JSON.stringify({
       error: "Server crash",
-      details: String(e?.message || e)
+      details: String(err?.message || err)
     }));
   }
 };
